@@ -166,7 +166,6 @@ public class BlankFragment extends Fragment implements
                         Log.i(TAG, "onStart: ");
                     }).request((allGranted, grantedList, deniedList) -> {
                 if (allGranted) {
-
                     if (isHuawei()) {
                         Log.i(TAG, "onStart: ");
                         getActivity().bindService(new Intent(getContext(), LocationManagerService.class), mHuaWeiServiceConnection,
@@ -223,7 +222,7 @@ public class BlankFragment extends Fragment implements
                         } else {
                             long time = mSendTime.getText().length() <= 0 ? 5000 : Long.parseLong(mSendTime.getText().toString());
                             mService.requestLocationUpdates();
-                            mService.senMsg(time);
+//                            mService.senMsg();
 
                         }
                     }

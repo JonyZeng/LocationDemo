@@ -42,16 +42,15 @@ import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import com.google.android.gms.location.ActivityRecognitionClient;
+import com.google.android.gms.location.ActivityTransition;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.tasks.OnCompleteListener;
-import com.google.android.gms.tasks.Task;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.time.LocalDateTime;
 import java.util.Timer;
 import java.util.TimerTask;
 
@@ -134,9 +133,17 @@ public class LocationUpdatesService extends Service {
     /**
      * The current location.
      */
-    private Location mLocation;
-    private List<Location> mLocationList = new ArrayList<>();
 
+    private long initInterval;//
+    private long firstInterval = 15 * 1000;// 15s
+    private int totalNumbers = 1;
+    private float distance = 20;
+    private Location currentLocation;
+    private Location lastLocation;
+    private int multiple = 1;//扩大间隔的倍数
+    private TimerTask mTask;
+    private StringBuilder msg;
+    private int maxCount = 64;
 
     public LocationUpdatesService() {
     }
@@ -154,7 +161,7 @@ public class LocationUpdatesService extends Service {
                 onNewLocation(locationResult.getLastLocation());
             }
         };
-
+        initInterval = firstInterval;
         createLocationRequest();
         getLastLocation();
 
@@ -186,7 +193,7 @@ public class LocationUpdatesService extends Service {
         boolean startedFromNotification = intent.getBooleanExtra(EXTRA_STARTED_FROM_NOTIFICATION,
                 false);
 
-        // We got here because the user decided to remove location updates from the notification.
+        // We got here because the user de  cided to remove location updates from the notification.
         if (startedFromNotification) {
             removeLocationUpdates();
             stopSelf();
@@ -295,7 +302,6 @@ public class LocationUpdatesService extends Service {
                     MyMqttService.getInstance().publish(msg.obj.toString());
                     Log.i(TAG, "handleMessage: list=" + msg.obj);
                     mListListener.setListListener(msg.obj.toString());
-                    mLocationList.clear();
                     break;
 
             }
@@ -303,22 +309,30 @@ public class LocationUpdatesService extends Service {
         }
     };
 
-    public void senMsg(long time) {
+    public void senMsg() {
+        if (timer != null) {
+            timer.cancel();
+            timer = null;
+        }
+        if (mTask != null) {
+            mTask.cancel();
+            mTask = null;
+        }
         timer = new Timer();
         // 初始化计时器任务
-        TimerTask task = new TimerTask() {
+        mTask = new TimerTask() {
             @Override
             public void run() {
-                Log.i(TAG, "run: size=" + mLocationList.size());
+                Log.i(TAG, "run: location=" + currentLocation);
                 Message msg = handler.obtainMessage();
                 msg.what = 1;
-                msg.obj = mLocationList;
+                msg.obj = currentLocation;
                 handler.sendMessage(msg);
 
             }
         };
-// 启动计时器，延迟 1s 执行，每 2s 执行一次
-        timer.schedule(task, 1000, time);
+        // 启动计时器，延迟 1s 执行，每 2s 执行一次
+        timer.schedule(mTask, initInterval, initInterval);
     }
 
     /**
@@ -331,7 +345,6 @@ public class LocationUpdatesService extends Service {
             if (timer != null) {
                 timer.cancel();
             }
-            mLocationList.clear();
             mFusedLocationClient.removeLocationUpdates(mLocationCallback);
             Utils.setRequestingLocationUpdates(this, false);
             stopSelf();
@@ -347,7 +360,7 @@ public class LocationUpdatesService extends Service {
     private Notification getNotification() {
         Intent intent = new Intent(this, LocationUpdatesService.class);
 
-        CharSequence text = Utils.getLocationText(mLocation);
+        CharSequence text = Utils.getLocationText(currentLocation);
 
         // Extra to help us figure out if we arrived in onStartCommand via the notification or not.
         intent.putExtra(EXTRA_STARTED_FROM_NOTIFICATION, true);
@@ -387,15 +400,12 @@ public class LocationUpdatesService extends Service {
     private void getLastLocation() {
         try {
             mFusedLocationClient.getLastLocation()
-                    .addOnCompleteListener(new OnCompleteListener<Location>() {
-                        @Override
-                        public void onComplete(@NonNull Task<Location> task) {
-                            if (task.isSuccessful() && task.getResult() != null) {
-                                mLocation = task.getResult();
-                                Log.i(TAG, "onComplete: " + mLocation.getLatitude() + " " + mLocation.getLatitude());
-                            } else {
-                                Log.w(TAG, "Failed to get location.");
-                            }
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful() && task.getResult() != null) {
+                            currentLocation = task.getResult();
+                            Log.i(TAG, "onComplete: " + currentLocation.getLatitude() + " " + currentLocation.getLongitude());
+                        } else {
+                            Log.w(TAG, "Failed to get location.");
                         }
                     });
         } catch (SecurityException unlikely) {
@@ -404,10 +414,50 @@ public class LocationUpdatesService extends Service {
     }
 
     //收到位置信息，发送本地广播
+    @SuppressLint("MissingPermission")
     private void onNewLocation(Location location) {
-        Log.i(TAG, "New location: " + location.toString());
-        mLocation = location;
-        mLocationList.add(mLocation);
+        if (location == null) return;
+        currentLocation = location;
+        msg = new StringBuilder();
+        double currentLat = currentLocation.getLatitude();
+        double currentLng = currentLocation.getLongitude();
+        double lastLat = currentLocation.getLatitude();
+        double lastLng = currentLocation.getLongitude();
+        int acc = Math.round(location.getAccuracy());
+        if (lastLocation != null) {
+            lastLat = lastLocation.getLatitude();
+            lastLng = lastLocation.getLongitude();
+        }
+        int dis = getDistance(currentLat, currentLng, lastLat, lastLng);
+        msg.append(" multiple=").append(multiple).append("\n")
+                .append("time=").append(LocalDateTime.now()).append("\n")
+                .append("initInterval=").append(initInterval / 1000).append("/s").append("\n")
+                .append("currentLat=").append(currentLat).append("\n")
+                .append("currentLng=").append(currentLng).append("\n")
+                .append("lastLat=").append(lastLat).append("\n")
+                .append("lastLng=").append(lastLng).append("\n")
+                .append("acc=").append(acc).append("\n")
+                .append("dis=").append(dis).append("\n")
+                .append("speed=").append(currentLocation.getSpeed()).append("\n")
+                .append("totalNumbers=").append(totalNumbers).append("\n");
+        Log.d(TAG, "onNewLocation: msg=" + msg);
+        lastLocation = currentLocation;
+        if ((dis <= distance || acc > distance) && multiple < maxCount) {//加倍
+            multiple++;
+            initInterval = firstInterval * multiple;
+        } else if (multiple >= maxCount && (dis <= distance || acc > distance)) {
+            Log.i(TAG, "onNewLocation: ");
+            multiple = maxCount;
+            initInterval = firstInterval * multiple;
+        } else {
+            initInterval = firstInterval;
+            multiple = 1;
+        }
+        totalNumbers++;
+        createLocationRequest();
+        mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, Looper.myLooper());
+        MyMqttService.getInstance().publish(String.valueOf(msg));
+        mListListener.setListListener(String.valueOf(msg));
         // Notify anyone listening for broadcasts about the new location.
         Intent intent = new Intent(ACTION_BROADCAST);
         intent.putExtra(EXTRA_LOCATION, location);
@@ -418,18 +468,23 @@ public class LocationUpdatesService extends Service {
         }
     }
 
+    public int getDistance(double startLat, double startLong, double endLat, double endLong) {
+        float[] results = new float[3];
+        Location.distanceBetween(startLat, startLong, endLat, endLong, results);
+        Log.i(TAG, "initView: " + results[0]);
+        return Math.round(results[0]);
+    }
+
     /**
      * Sets the location request parameters.
      */
     private void createLocationRequest() {
-        long time = Utils.getIntervalTime(getApplicationContext());
-        float dis = Utils.getDis(getApplicationContext());
-        Log.i(TAG, "createLocationRequest: time=" + time + " dis=" + dis);
+        Log.i(TAG, "createLocationRequest: time=" + initInterval + " dis=" + distance);
         mLocationRequest = LocationRequest.create();
-        mLocationRequest.setInterval(time);
+        mLocationRequest.setInterval(initInterval);
         mLocationRequest.setFastestInterval(FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS);
         mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-        mLocationRequest.setSmallestDisplacement(dis);
+        mLocationRequest.setSmallestDisplacement(distance);
     }
 
     /**

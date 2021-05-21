@@ -34,16 +34,16 @@ public class MyMqttService extends Service {
     public final String TAG = MyMqttService.class.getSimpleName();
     private static MqttAndroidClient mqttAndroidClient;
     private MqttConnectOptions mMqttConnectOptions;
-    //    public String HOST = "ws://192.168.8.164:8083/mqtt";//服务器地址（协议+地址+端口号）
-//    public String USERNAME = "admin";//用户名
-//    public String PASSWORD = "public";//密码
-//    public static String RESPONSE_TOPIC = "s/ds";//响应主题
-//    public static String PUBLISH_TOPIC = "measurement/measurements/createBulk";//发布主题
-    public String HOST = "wss://hajj.iot.gov.sa:443/mqtt";//服务器地址（协议+地址+端口号）
-    public String USERNAME = "t2045328/device_F213A123F442DF214B";//用户名
-    public String PASSWORD = "0Q5F3a]rmE";//密码
-    public static String RESPONSE_TOPIC = "s/ds";//发布主题
-    public static String PUBLISH_TOPIC = "measurement/measurements/createBulk";//响应主题
+        public String HOST = "ws://192.168.8.164:8083/mqtt";//服务器地址（协议+地址+端口号）
+    public String USERNAME = "admin";//用户名
+    public String PASSWORD = "public";//密码
+    public static String RESPONSE_TOPIC = "s/ds";//响应主题
+    public static String PUBLISH_TOPIC = "measurement/measurements/createBulk";//发布主题
+//    public String HOST = "wss://hajj.iot.gov.sa:443/mqtt";//服务器地址（协议+地址+端口号）
+//    public String USERNAME = "t2045328/device_F213A123F442DF214B";//用户名
+//    public String PASSWORD = "0Q5F3a]rmE";//密码
+//    public static String RESPONSE_TOPIC = "s/ds";//发布主题
+//    public static String PUBLISH_TOPIC = "measurement/measurements/createBulk";//响应主题
     public String CLIENTID = "F213A123F442DF214B";//客户端ID，一般以客户端唯一标识符表示，这里用设备序列号表示
     private static MyMqttService myMqttService;
 

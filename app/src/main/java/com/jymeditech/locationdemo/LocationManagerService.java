@@ -38,6 +38,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.Message;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -54,7 +55,13 @@ import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import static androidx.constraintlayout.motion.widget.Debug.getLocation;
 
@@ -115,6 +122,7 @@ public class LocationManagerService extends Service {
     private Location mLocation;
     private LocationManager mLocationManager;
     private String mLocationProvider;
+    private List<Location> mLocationList = new ArrayList<>();
 
 
     public LocationManagerService() {
@@ -150,7 +158,6 @@ public class LocationManagerService extends Service {
             getApplicationContext().startActivity(intent);
             return;
         }
-
         getLastLocation();
         //？？？？？？创建一个
         HandlerThread handlerThread = new HandlerThread(TAG);
@@ -273,6 +280,52 @@ public class LocationManagerService extends Service {
         }
     }
 
+    private static LocationUpdatesService.ListListener mListListener;
+
+    public static void setListListener(LocationUpdatesService.ListListener listListener) {
+        mListListener = listListener;
+    }
+
+    public interface ListListener {
+        void setListListener(String list);
+    }
+
+    private Timer timer;
+    private Handler handler = new Handler(Looper.getMainLooper()) {
+        @Override
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
+            switch (msg.what) {
+                case 1:
+                    MyMqttService.getInstance().publish(msg.obj.toString());
+                    Log.i(TAG, "handleMessage: list=" + msg.obj);
+                    mListListener.setListListener(msg.obj.toString());
+                    mLocationList.clear();
+                    break;
+
+            }
+            Log.d("TAG", "handleMessage: timer");
+        }
+    };
+
+    public void senMsg(long time) {
+        timer = new Timer();
+        // 初始化计时器任务
+        TimerTask task = new TimerTask() {
+            @Override
+            public void run() {
+                Log.i(TAG, "run: size=" + mLocationList.size());
+                Message msg = handler.obtainMessage();
+                msg.what = 1;
+                msg.obj = mLocationList;
+                handler.sendMessage(msg);
+
+            }
+        };
+// 启动计时器，延迟 1s 执行，每 2s 执行一次
+        timer.schedule(task, 1000, time);
+    }
+
     /**
      * Removes location updates. Note that in this sample we merely log the
      * {@link SecurityException}.
@@ -351,7 +404,14 @@ public class LocationManagerService extends Service {
     //收到位置信息，发送本地广播
     private void onNewLocation(Location location) {
         Log.i(TAG, "New location: " + location);
-
+        Log.i(TAG, "onNewLocation: 海拔=" + location.getAltitude());
+        Log.i(TAG, "onNewLocation: lon=" + location.getLongitude());
+        Log.i(TAG, "onNewLocation: lat=" + location.getLatitude());
+        Log.i(TAG, "onNewLocation: 速度=" + location.getSpeed());
+        LocalDateTime localDateTime = LocalDateTime.ofEpochSecond(location.getTime() / 1000, 0, ZoneOffset.ofHours(8));
+        Log.i(TAG, "onNewLocation: 时间=" + location.getTime());
+        Log.i(TAG, "onNewLocation: localDateTime=" + localDateTime);
+        Log.i(TAG, "onNewLocation: 精度=" + location.getAccuracy());
         mLocation = location;
 
         // Notify anyone listening for broadcasts about the new location.
